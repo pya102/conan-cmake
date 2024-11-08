@@ -1,4 +1,4 @@
-from conan import ConanFile
+from conans import ConanFile, tools
 import os
 
 class CMakeConan(ConanFile):
@@ -9,14 +9,13 @@ class CMakeConan(ConanFile):
     homepage = "https://cmake.org/"
     topics = ("cmake", "build", "system")
     settings = "os", "arch"
-    package_type = "application"
 
     def source(self):
         self.run("git clone --branch v3.30.5 https://github.com/Kitware/CMake.git .")
 
     def build(self):
-        # Ensure CMKAKE_MAKE_PROGRAM, CMAKE_C_COMPILER, and CMAKE_CXX_COMPILER are set
-        self.make_program = "gmake"
+        # Ensure CMAKE_MAKE_PROGRAM, CMAKE_C_COMPILER, and CMAKE_CXX_COMPILER are set
+        make_program = "gmake"
         cc = os.getenv("CC", "gcc")
         cxx = os.getenv("CXX", "g++")
 
@@ -24,28 +23,24 @@ class CMakeConan(ConanFile):
 
         # Clean the environment variables to avoid any conflicts
         env = os.environ.copy()
-        env.pop("CMAKE_TOOLCHAIN_FILE", None) # Remove if set
-        env.pop("CMAKE_PREFIX_PATH", None)    # Remove if set
+        env.pop("CMAKE_TOOLCHAIN_FILE", None)  # Remove if set
+        env.pop("CMAKE_PREFIX_PATH", None)     # Remove if set
 
         # Prepare the environment list for self.run()
-        env_list = [f"{key}={value}" for key, value in env.items()]
+        with tools.environment_append(env):
+            # Run the configure script directly
+            self.run(f"./bootstrap "
+                     f"--prefix={self.package_folder} "
+                     f"-- -DCMAKE_MAKE_PROGRAM={make_program} "
+                     f"-DCMAKE_C_COMPILER={cc} "
+                     f"-DCMAKE_CXX_COMPILER={cxx}")
 
-        # Run the configure script directly
-        self.run(f"./bootstrap "
-                 f"--prefix={self.package_folder} "
-                 f"-- -DCMAKE_MAKE_PROGRAM={self.make_program} "
-                 f"-DCMAKE_C_COMPILER={cc} "
-                 f"-DCMAKE_CXX_COMPILER={cxx}",
-                 env=env_list # Pass the cleaned environment
-                )
-
-
-        # Run gmake with the appropriate number of processors
-        self.run(f"{self.make_program} -j$(nproc)")
+            # Run gmake with the appropriate number of processors
+            self.run(f"{make_program} -j{tools.cpu_count()}")
 
     def package(self):
         # Install the library files to the package folder
-        self.run(f"{self.make_program} install")
+        self.run("gmake install")
 
     def package_info(self):
         # Specify the name of the library
@@ -54,4 +49,4 @@ class CMakeConan(ConanFile):
         self.cpp_info.resdirs = []
         self.cpp_info.bindirs = ["bin"]
 
-        self.buildenv_info.prepend_path("PATH", os.path.join(self.package_folder, "bin"))
+        self.env_info.PATH.append(os.path.join(self.package_folder, "bin"))
